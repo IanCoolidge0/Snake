@@ -4,6 +4,7 @@ import pygame
 import sys
 import time
 import random
+import numpy as np
 
 from pygame.locals import *
 
@@ -38,21 +39,104 @@ class Snake(object):
     def __init__(self):
         self.lose()
         self.color = (0,0,0)
+        self.is_dead = False
+    
+    def reset(self):
+        self.is_dead = False
 
-    def update(self):
-        for event in pygame.event.get():
-            if event.type == QUIT:
-                pygame.quit()
-                sys.exit()
-            elif event.type == KEYDOWN:
-                if event.key == K_UP:
-                    self.point(UP)
-                elif event.key == K_DOWN:
-                    self.point(DOWN)
-                elif event.key == K_LEFT:
-                    self.point(LEFT)
-                elif event.key == K_RIGHT:
-                    self.point(RIGHT)
+    def turn_left(self):
+        if self.direction == UP:
+            self.direction = LEFT
+        elif self.direction == LEFT:
+            self.direction = DOWN
+        elif self.direction == DOWN:
+            self.direction = RIGHT
+        elif self.direction == RIGHT:
+            self.direction = UP
+
+    def turn_right(self):
+        if self.direction == UP:
+            self.direction = RIGHT
+        elif self.direction == RIGHT:
+            self.direction = DOWN
+        elif self.direction == DOWN:
+            self.direction = LEFT
+        elif self.direction == LEFT:
+            self.direction = UP
+
+    def update(self, move=-1):
+        if move == -1:
+            for event in pygame.event.get():
+                if event.type == QUIT:
+                    pygame.quit()
+                    sys.exit()
+                elif event.type == KEYDOWN:
+                    if event.key == K_UP:
+                        self.point(UP)
+                    elif event.key == K_DOWN:
+                        self.point(DOWN)
+                    elif event.key == K_LEFT:
+                        self.point(LEFT)
+                    elif event.key == K_RIGHT:
+                        self.point(RIGHT)
+        elif move == 0:
+            pass
+        elif move == 1:
+            self.turn_left()
+        elif move == 2:
+            self.turn_right()
+
+    def food_ray(self, apple):
+        cur = self.positions[0]
+        x, y = self.direction
+        temp_pos = (((cur[0]+(x*GRIDSIZE)) % SCREEN_WIDTH), (cur[1]+(y*GRIDSIZE)) % SCREEN_HEIGHT)
+
+        while temp_pos != cur:
+            xp, yp = temp_pos
+            if xp < 0 or xp > 620 or yp < 0 or yp > 460:
+                return 0
+            if temp_pos == apple.position:
+                return 1
+            temp_pos = (((temp_pos[0]+(x*GRIDSIZE)) % SCREEN_WIDTH), (temp_pos[1]+(y*GRIDSIZE)) % SCREEN_HEIGHT)
+        
+        return 0
+
+    def food_distance(self, apple):
+        x1, y1 = self.positions[0]
+        x2, y2 = apple.position
+        return abs(y2 - y1) + abs(x2 - x1)
+
+    def facing_wall(self, pos):
+        x, y = pos
+        return x < 0 or x > SCREEN_WIDTH or y < 0 or y > SCREEN_HEIGHT
+
+    def get_input(self, apple):
+        brain_input = np.ndarray((6,))
+        
+        cur = self.positions[0]
+        x, y = self.direction
+        new = cur[0]+x*GRIDSIZE, cur[1]+y*GRIDSIZE
+        brain_input[0] = 1 - int((new in self.positions) or self.facing_wall(new))
+
+        self.turn_left()
+        x, y = self.direction
+        new = cur[0]+x*GRIDSIZE, cur[1]+y*GRIDSIZE
+        brain_input[1] = 1 - int((new in self.positions) or self.facing_wall(new))
+
+        self.turn_right()
+        self.turn_right()
+        x, y = self.direction
+        new = cur[0]+x*GRIDSIZE, cur[1]+y*GRIDSIZE
+        brain_input[2] = 1 - int((new in self.positions) or self.facing_wall(new))
+
+        brain_input[5] = self.food_ray(apple)
+        self.turn_left()
+        brain_input[3] = self.food_ray(apple)
+        self.turn_left()
+        brain_input[4] = self.food_ray(apple)
+        self.turn_right()
+
+        return brain_input
 
     def get_head_position(self):
         return self.positions[0]
@@ -61,6 +145,8 @@ class Snake(object):
         self.length = 1
         self.positions =  [((SCREEN_WIDTH / 2), (SCREEN_HEIGHT / 2))]
         self.direction = random.choice([UP, DOWN, LEFT, RIGHT])
+        self.is_dead = True
+        print("lost")
 
     def point(self, pt):
         if self.length > 1 and (pt[0] * -1, pt[1] * -1) == self.direction:
@@ -103,15 +189,18 @@ def check_eat(snake, apple):
         snake.length += 3
         apple.randomize()
 
-def render(snake, apple):
+def render(snakes, apples):
 
     surface.fill((255,255,255))
-    snake.move()
-    check_eat(snake, apple)
-    snake.draw(surface)
-    apple.draw(surface)
+    for i in range(len(snakes)):
+        if not snakes[i].is_dead:
+            snakes[i].move()
+            check_eat(snakes[i], apples[i])
+            snakes[i].draw(surface)
+            apples[i].draw(surface)
+
     font = pygame.font.Font(None, 36)
-    text = font.render(str(snake.length), 1, (10, 10, 10))
+    text = font.render(str(snakes[0].length), 1, (10, 10, 10))
     textpos = text.get_rect()
     textpos.centerx = 20
     surface.blit(text, textpos)
@@ -119,4 +208,4 @@ def render(snake, apple):
 
     pygame.display.flip()
     pygame.display.update()
-    fpsClock.tick(FPS + snake.length/3)
+    fpsClock.tick(FPS + snakes[0].length/3)
